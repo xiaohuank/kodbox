@@ -10,6 +10,7 @@ class userView extends Controller{
 		if( isset($this->config['settings']['language']) ){
 			$this->config['settingAll']['language'] = array();
 		}
+		$userID  = KodUser::id();
 		$options = array(
 			"kod"	=> array(
 				'systemOS'		=> '-',
@@ -24,7 +25,7 @@ class userView extends Controller{
 				'channel'		=> INSTALL_CHANNEL,
 			),
 			"user"	=> array(
-				'userID'		=> USER_ID ? USER_ID:'',
+				'userID'		=> $userID ? $userID:'',
 				'myhome'    	=> defined('MY_HOME') ? MY_HOME : '',
 				'desktop'   	=> defined('MY_DESKTOP') ? MY_DESKTOP : '',
 				'isRoot'		=> KodUser::isRoot() ? 1:0,//固定数值,true/false Android会异常;
@@ -44,8 +45,8 @@ class userView extends Controller{
 			"lang"	=> I18n::getType(),
 		);
 		if($user){//空间大小信息;
-			$userInfoFull = Model('User')->getInfoFull(USER_ID);
-			$options['user']['targetSpace'] = Action('explorer.auth')->space('user',USER_ID);
+			$userInfoFull = Model('User')->getInfoFull($userID);
+			$options['user']['targetSpace'] = Action('explorer.auth')->space('user',$userID);
 			$options['user']['role'] = $options['user']['role']['roleList'];
 			$options['user']['config'] = array_merge($this->config['settingDefault'],Model('UserOption')->get());
 			$options['user']['editorConfig'] = array_merge($this->config['editorDefault'],Model('UserOption')->get(false,'editor'));
@@ -142,23 +143,29 @@ class userView extends Controller{
 	}
 	
 	public function plugins(){
-		$GLOBALS['SHOW_OUT_EXCEPTION'] = true;// 拦截show_out/show_tips; 转为抛出异常;
-		hook::bind('eventRun.error',array($this,'pluginsError'));
+		$GLOBALS['SHOW_OUT_EXCEPTION'] = true;// 拦截 show_out/show_tips; 转为抛出异常;
+		$GLOBALS['SHOW_OUT_PLUGINS']   = true;// 拦截系统 error/warning; 转为js输出; 
 		
 		ob_get_clean();
+		hook::bind('eventRun.error',array($this,'pluginsError'));
 		header("Content-Type: application/javascript; charset=utf-8");
 		echo 'var kodReady=[];';
 		Hook::trigger('user.commonJs.insert');
-		$useTime = sprintf('%.4f',mtime() - TIME_FLOAT);
-		echo "\n/* time={$useTime} */\n";
-	}
-	//  输出插件js过程中,报错处理;
-	public function pluginsError($error=''){
-		// $error = $error."\n;call:".get_caller_msg();
-		echo ';{console.error(decodeURIComponent("'.rawurlencode($error).'"));};';
-		return true;
+		echo "\n/* timeUse=".sprintf('%.4f',mtime() - TIME_FLOAT)." */\n";
 	}
 	
+	/**
+	 * 输出插件js过程中报错处理
+	 * 当前只会捕获抛出异常的情况; `new Exception('xxx')`; 不影响后续插件
+	 * 
+	 * 插件中代码及语法报错时全局捕获,执行到 think_exception 中处理; 处理后会直接退出,后续插件不再输出;
+	 * 		set_exception_handler('beforeShutdownFatalError') ==> think_exception;
+	 * 		eg: $r = 3/0;$r = array_slice($a,1);$r = array_slice2($a,1); 等代码报错;
+	 */
+	public function pluginsError($error=''){
+		plugin_echo_error($error,get_caller_msg());
+		return true;
+	}
 	
 	// 计划任务触发;
 	public function call(){

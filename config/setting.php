@@ -228,7 +228,7 @@ $config['settingSystemDefault'] = array(
 	'systemLogoMenu' 	=> './static/images/common/logo-kod.png',
 	'adminTheme' 		=> 'black',// black/white 
 	
-	'pathHidden'		=> "Thumb.db,.DS_Store,.gitignore,.git",//目录列表隐藏的项
+	'pathHidden'		=> "Thumb.db,.DS_Store,.gitignore,.git,*.temp,*.tmp",//目录列表隐藏的项
 	'autoLogin'			=> "0",			// 是否自动登录；登录用户为guest
 	'needCheckCode'		=> "0",			// 登录是否开启验证码；默认关闭
 	'firstIn'			=> "explorer",	// 登录后默认进入[explorer desktop]
@@ -251,7 +251,7 @@ $config['settingSystemDefault'] = array(
 	'dateFormat'		=> 'Y-m-d',		// 默认 Y-m-d:YYYY-MM-DD; d/m/Y:DD/MM/YYYY; m/d/Y:MM/DD/YYYY; 
 										// https://en.wikipedia.org/wiki/Date_format_by_country
 
-	'fileEncryption'	=> 'keepName',	// all-全加密;keepExt-加密文件名保留扩展名;keepName-不加密;
+	'fileEncryption'	=> 'all',		// all-全加密;keepExt-加密文件名保留扩展名;keepName-不加密;
 	'passwordErrorLock'	=> '1',			// 密码连续错误锁定账号开关; 某账号连续输入5次后锁定30s后才能登录;
 	'passwordLockNumber'=> '5',			// 密码连续错误允许次数;
 	'passwordLockTime'	=> '60',		// 密码连续错误锁定时间;
@@ -338,6 +338,7 @@ $config['settingDefault'] = array(
 	'theme'				=> "auto",		// 'light','dark-mode','auto'
 	'themeImage' 		=> "",			// url/wallpage/css
 	'wall'				=> "4",			// wall picture
+	'language'			=> "zh-CN",		// zh-CN,en...
 	'listTypeKeep'		=> '1',			// 1|0, 为每个文件夹选择视图模式，或对所有文件夹使用相同的视图模式
 	'listSortKeep'		=> '1',			// 1|0, 为每个文件夹配置列排序顺序，或对所有文件夹使用相同的顺序
 	'menuBarAutoHide'	=> '0',			// 1|0, 左侧菜单栏自动显示和隐藏
@@ -673,7 +674,7 @@ if(!defined('INSTALL_CHANNEL')){define('INSTALL_CHANNEL','');}
 
 function logDebug($log,$data=''){
 	// if(ACT == 'fileUpload'){return;}
-	// if(!defined('USER_ID') || USER_ID != '1122'){return;}
+	// if(KodUser::id() != 1122){return;}
 	if(is_object($data) || is_array($data)){
 		$data = json_encode_force($data);
 		$data = ' '.str_replace(array('\\n','\\r','\\t','\\"','\\\'','\/'),array("\n","\r","\t",'"',"'",'/'),$data);

@@ -128,8 +128,8 @@ class filterUserCheck extends Controller {
 	 * 根据规则列表顺序依次进行过滤; 所有都能通过才算放过;
 	 */
 	private function userLoginCheck($user){
-		if($this->config['loginIpCheckIgnore'] == '1') return true;// 手动关闭ip白名单检测;
-		if(!$this->options['loginCheckAllow']) return true;
+		if(_get($this->config,'loginIpCheckIgnore') == '1') return true;// 手动关闭ip白名单检测;
+		if(!_get($this->options,'loginCheckAllow')) return true;
 		
 		$ip 		= get_client_ip();
 		$serverIP 	= get_server_ip();
@@ -274,6 +274,12 @@ class filterUserCheck extends Controller {
 	 * 连续错误5次; 则锁定30秒; [1分钟内最多校验10次,600次/h/账号]
 	 */
 	private function userLoginLockCheck($name,$user){
+		// webdav存储定期检测、网络请求认证不计入统计
+		if (defined('KOD_FROM_WEBDAV')) {
+			if (in_array($_SERVER['HTTP_USER_AGENT'], array('URL Accessibility Checker','webdav/kodbox 1.0'))) {
+				return $user;
+			}
+		}
 		if($this->options['passwordErrorLock'] =='0') return $user;
 		$findUser = Model("User")->userLoginFind($name);
 		if(!$findUser) return $user;

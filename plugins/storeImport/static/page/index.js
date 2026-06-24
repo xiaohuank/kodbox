@@ -8,22 +8,31 @@ ClassBase.define({
             $toolbar.append('<div class="right"><button class="kui-btn import">'+LNG['storeImport.meta.name']+'</button></div>');
         }
         $toolbar.undelegate('button.import','click');
-        $toolbar.delegate('button.import', 'click', _.bind(this.impDialog, this));
+        $toolbar.delegate('button.import', 'click', _.bind(this.showDialog, this));
 
         this.notifyList = {};
     },
 
-    impDialog: function() {
+    showDialog: function() {
         var option = {
             id: 'store-import-dg',
-            ico: '<i class="font-icon ri-folder-transfer-line"></i>',
+            ico: '<i class="font-icon ri-folder-received-line"></i>',
             title: LNG['storeImport.meta.name'],
-            // width:680,height:565,
-            width:720,height:600,
+            width:840,height:600,
             okVal: LNG['common.ok'],
         };
         var formData = {
-			formStyle:{className: "form-box-title-block"},
+			formStyle:{
+                className: "form-box-title-block",
+                tabs:{
+                    import:"desc,pathFrom,pathTo",
+                    logList:"logList",
+                },
+                tabsName:{
+                    import:LNG['storeImport.meta.name'],
+                    logList:LNG['common.history'],
+                }
+            },
 			desc: {
 				type: "html",
 				display: LNG['admin.setting.recDesc'],
@@ -45,7 +54,11 @@ ClassBase.define({
                     pathTree:'{block:driver}/',
 				},
 				attr: {"placeholder":LNG['admin.storage.localStore']},
-                desc: LNG['storeImport.main.ioFromPathDesc'],
+                desc: '<div>\
+                        <span style="display: inline-block; vertical-align: top; margin-top: 10px;">'+LNG['storeImport.main.ioFromPathDesc']+'</span>\
+                        <span class="kui-btn ml-5 mt-5 mr-5 check-cnt">'+LNG['storeImport.main.checkCnt']+'</span >\
+                        <span style="display: inline-block; vertical-align: top; margin-top: 10px; color:#555;" class="value-cnt"></span>\
+                        </div>',
                 require:1
 			},
 			pathTo: {
@@ -66,49 +79,74 @@ ClassBase.define({
                 desc: LNG['storeImport.main.ioToPathDesc'],
                 require:1
 			},
-            // checkHash: {
-            //     type:"switch",
-            //     value:0,
-            //     display:"计算文件哈希（仅限本地存储）",
-            //     desc:"为导入的文件计算哈希值，后续上传同文件时可实现秒传。计算哈希比较耗时，文件较多时不建议开启。",
-            //     className:"hidden"
-            // },
-            cli: {
-                type:"html",
-				display:' ',
-				value: '<div class="mt-10">\<div>'+LNG['storeImport.task.desc1']+'<span class="kui-btn btn btn-sm" style="vertical-align:bottom">'+LNG['explorer.copy']+'</span></div>\
-                <code style="overflow-wrap:break-word;white-space:normal;display:block;padding:6px 10px!important;margin-top:5px;border-radius:4px;"></code>\
-                <div class="mt-5 desc">'+LNG['storeImport.task.desc2']+'</div>\
-                </div>'
-            }
+            logList:{
+                type:"table",
+                info:{
+                    // TODO 可以加个删除，尤其是失败项
+                },
+                row:{
+                    userID:{display:LNG['common.user'],template:'{{userInfo.nickName || userInfo.name}}'},
+                    pathFrom:{display:LNG['common.detail'],template:'<code>{{pathFrom}} => {{pathTo}}</code>'},
+                    status:{display:LNG['common.result'],template:'<span class="color-label icon-dot {{stateInfo.color}}-normal" title="{{stateInfo.text}}" title-timeout="200">{{taskInfo.taskFinished}} / {{taskInfo.taskTotal}}</span>'},
+                    time:{display:LNG['admin.backup.timeTaken'],template:'{{window.timeShow((modifyTime - createTime) || 1)}}'},
+                    createTime:{display:LNG['common.operateTime'],template:'{{window.dateFormat(createTime,"Y-m-d H:i:s")}}'}
+                },
+            },
 		};
         var self = this;
         this.formMaker = new kodApi.formMaker({parent:this,formData:formData});
         this.formMaker.renderDialog(option, function (data) {
-            // var hash = data.checkHash == '1' ? 1 : 0;
             self.doImport(_.pick(data, ['pathFrom','pathTo']));
             return false;
         });
-        // this.listenTo(this.formMaker,'onChange',function(key,value,$row){});
-        this.formMaker.bind('onChange',function(key,value) {
-            self.formMaker.$('.item-cli').hide();
-            if (!value) return;
-            var pathFrom = key == 'pathFrom' ? value : self.formMaker.getValue('pathFrom');
-            var pathTo = key == 'pathTo' ? value : self.formMaker.getValue('pathTo');
-            if (!pathFrom || !pathTo || !_.startsWith(pathFrom, '{io:') || !_.startsWith(pathTo, '{source:')) return;
+        this.initLogList(); // TODO 切换时才获取，避免数据量大导致加载慢
+        // this.bind('onRemove',function(){
+        //     self.formMaker && self.formMaker.objectRemove();
+		// });
 
-            var cmd = "sudo -u nginx php "+G.kod.BASIC_PATH+"index.php 'admin/storage/import&accessToken="+G.kod.accessToken+"' --pathFrom-'"+pathFrom+"' --pathTo-'"+pathTo+"'";
-            self.formMaker.$('.item-cli code').html(cmd);
-            self.formMaker.$('.item-cli').show();
-		});
-        this.formMaker.$el.delegate('.item-cli .btn', 'click', function(){
-            $.copyText($(this).parents('.setting-content').find('code').text());
-			Tips.tips(LNG['explorer.share.copied']);
+        // 检查原始目录数据量
+        this.formMaker.$('.item-pathFrom .check-cnt').click(function(){
+            var pathFrom = self.formMaker.getValue('pathFrom');
+            if (!pathFrom) return Tips.tips(LNG['storeImport.main.selectFromPath'], 'warning');
+
+            var $btn = $(this);
+            $btn.addClass('disable-event');
+            var tips = Tips.loadingMask(false, LNG['storeImport.main.checkCnt']+'...');
+            kodApi.requestSend('plugin/storeImport/check',{pathFrom: pathFrom},function(result) {    // &hash='+hash
+                tips && tips.close();
+                $btn.removeClass('disable-event');
+                if (!result || !result.code) return Tips.close(result);
+
+                var folders = _.get(result, 'data.folder', 0);
+                var files = _.get(result, 'data.file', 0);
+                var total = folders + files;
+
+                var html = _.replace(_.replace(LNG['storeImport.main.allCnt'],'[0]',folders),'[1]',files)
+                if (total > 4000000) {
+                    html += '<span class="red-6 ml-10">'+LNG['storeImport.main.errCnt']+'</span>';
+                } else if (total > 2000000) {
+                    html += '<span class="orange-5 ml-10">'+LNG['storeImport.main.warnCnt']+'</span>';
+                }
+                $btn.next().html(html);
+            });
         });
+        this.formMaker.bind('onChange',function(key,value,$row){
+			if (key != 'pathFrom') return true;
+            $row.find('.desc .value-cnt').html('');
+		});
     },
     onRemove: function () {
-        // TODO 
+        // TODO 触发不了，原因未知
         this.formMaker && this.formMaker.objectRemove();
+    },
+
+    // 初始化（刷新）历史记录
+    initLogList: function(){
+        var self = this;
+        kodApi.requestSend('plugin/storeImport/logGet',{},function(result) {
+            if (!result || !result.code) return;
+            self.formMaker.setValue('logList', result.data);
+		});
     },
 
     // 导入提交
@@ -122,6 +160,7 @@ ClassBase.define({
         var key  = md5('store_import_'+jsonEncode(data));
         var notify = this.notifyList[key] || null;
         if (notify) return Tips.tips(LNG['storeImport.task.subErr'], 'warning');
+        data.taskId = key + '|' + timeFloat()+roundString(4);
 
         var self = this;
         var tips = Tips.loadingMask();
@@ -157,7 +196,8 @@ ClassBase.define({
     // 导入进度提示
     showNotify: function (param, result) {
         var self = this;
-        var key  = md5('store_import_'+jsonEncode(param));
+        var data = _.pick(param, ['pathFrom','pathTo']);
+        var key  = md5('store_import_'+jsonEncode(data));
         var tips = this.notifyList[key] || null;
         // 1.新建notify
         if (!tips || result === false) {
@@ -182,10 +222,10 @@ ClassBase.define({
         // 2.1 已关闭
         if (!tips || tips == 'killed') return;
         // 2.2 异常。进度：code=true：获取进度中，info=1：完成；info=0：进行中——部分无法获取到最终task，导致data=false，原因未知，暂不处理
-        // if (!result.code || !result.data || !_.has(result, 'info')) {
-        if (!result.code || !_.has(result, 'info')) {
-            var text = _.get(result, 'data') || LNG('storeImport.task.reqErr');
-            if (!_.isString(text)) text = LNG('storeImport.task.taskErr');
+        // show_tips错误(html)，该值为undefined；此时任务不一定结束，仍然关闭（kill）——实际为后端shutdown kill
+        if (_.isUndefined(result) || !result.code || !_.has(result, 'info')) {
+            var text = _.get(result, 'data', LNG['storeImport.task.reqErr']);
+            if (!_.isString(text)) text = LNG['storeImport.task.taskErr'];
             tips.icon('error').content(text).processHide().close(5000);
             this.formDisable(false);
             return;
@@ -199,6 +239,9 @@ ClassBase.define({
         // 2.5 完成
         if (_.get(result,'info') == '1') { // percent=1
             var msg     = _.get(result, 'data.desc') || '';
+            if (!msg && _.get(result, 'data.timeNeed')) {
+                msg = timeShow(_.get(result, 'data.timeNeed')); // 耗时
+            }
             if(msg) msg = '<span class="fl-right">'+msg+'</span>';
             var icon    = 'success';
             var title   = LNG['storeImport.task.importEnd'];
@@ -208,6 +251,11 @@ ClassBase.define({
                 title   = LNG['storeImport.task.taskEnd'];
                 percent = 1;
                 tips.$main.find('.process-add').css('background-color', '#ff4d4f');
+            }
+            if (percent < 1) {
+                icon = 'warning';
+                tips.content(LNG['storeImport.task.partDesc']);
+                // tips.$main.find('.process-add').css('background-color', '#f7ba29');
             }
             tips.icon(icon).title(title).process({text: text + msg, process: percent});
             this.formDisable(false);
@@ -227,6 +275,9 @@ ClassBase.define({
             '.aui-dialog .aui-footer button',
         ];
         $form.find(_.join(buttons)).prop('disabled', status);
+
+        // 更新日志记录
+        if (!status) this.initLogList();
     }
 
 });

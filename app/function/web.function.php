@@ -313,6 +313,11 @@ function curl_progress_start($curl){
 	$GLOBALS['curlKodLast'] = $curl;
 	Hook::trigger('curl.progressStart',$curl);
 	think_status('curlTimeStart');
+	
+	if(GLOBAL_DEBUG){
+		$curlInfo = curl_getinfo($curl);
+		write_log("[".$curlInfo['effective_method']."] ".$curlInfo['url'],'curl');
+	}
 
 	// 内存缓存;
 	// $curlInfo = curl_getinfo($curl);
@@ -322,7 +327,7 @@ function curl_progress_start($curl){
 	// 	return $GLOBALS['curlCacheResult'][$curlInfo['url']];
 	// }
 }
-function curl_progress_end($curl,&$curlResult=false){
+function curl_progress_end($curl,&$body=false){
 	$GLOBALS['curlKodLastTime'] = 0;
 	$GLOBALS['curlKodLast'] = false;
 	Hook::trigger('curl.progressEnd',$curl);
@@ -330,21 +335,23 @@ function curl_progress_end($curl,&$curlResult=false){
 	// 网络请求记录;
 	$curlInfo = curl_getinfo($curl);
 	think_status('curlTimeEnd');
-	$runTime = '[ RunTime:'.think_status('curlTimeStart','curlTimeEnd',6).'s ]';
-	$runInfo = "sizeUp={$curlInfo['size_upload']};sizeDown={$curlInfo['download_content_length']};";//json_encode($curlInfo)
+	$runTime = '[ RunTime:'.think_status('curlTimeStart','curlTimeEnd',5).'s];';
+	$runInfo = "size={$curlInfo['size_upload']}/{$curlInfo['download_content_length']};";//json_encode($curlInfo)
 	think_trace(" ".$curlInfo['url'].";".$runInfo.$runTime,'','CURL');
 	
 	$httpCode = $curlInfo['http_code'];
 	$errorMessage = '';
-	if($curlResult && $httpCode < 200 || $httpCode >= 300){
+	if($body && ($httpCode < 200 || $httpCode >= 300)){
 		$errorMessage = "curl error code=".$httpCode.'; '.curl_error($curl);		
 		$GLOBALS['curl_request_error'] = array('message'=>$errorMessage,'url'=> $curlInfo['url'],'code'=>$httpCode);
-		write_log("[CURL] code=".$httpCode.';'.$curlInfo['url'],'curl');
+		write_log("[CURL]     code=".$httpCode.";".$runTime.$runInfo.$curlInfo['url'],'curl');
 	}
 	// write_log("[CURL] ".$curlInfo['url']."; code=$httpCode;".curl_error($curl).";".get_caller_msg(),'test');
 	if(GLOBAL_DEBUG){
-		$response = strlen($curlResult) > 1000 ? substr($curlResult,0,1000).'...':$curlResult;
-		write_log("[CURL] code=".$httpCode.';'.$curlInfo['url'].";$errorMessage",'curl');
+		$response = is_string($body) ? substr($body,0,300).'...': '';
+		$response = preg_replace("/\s+/"," ",$response);
+		$response = str_replace(array(', "',': "',' { ','{ "'),array(',"',':"','{','{"'),$response);
+		write_log("[CURL]     code=".$httpCode.";".$runTime.$runInfo." out=".$response,'curl');
 	}
 }
 function curl_progress(){
@@ -386,11 +393,11 @@ function url_request($url,$method='GET',$data=false,$headers=false,$options=fals
 			$upload = true;
 			$path = ltrim($value,'@');
 			$filename = iconv_app(get_path_this($path));
-			$mime = get_file_mime(get_path_ext($filename));
 			if(isset($data['curlUploadName'])){//自定义上传文件名;临时参数
 				$filename = $data['curlUploadName'];
 				unset($data['curlUploadName']);
 			}
+			$mime = get_file_mime(get_path_ext($filename));
 			if (class_exists('\CURLFile')){
 				$data[$key] = new CURLFile(realpath($path),$mime,$filename);
 			}else{
@@ -491,12 +498,12 @@ function url_request($url,$method='GET',$data=false,$headers=false,$options=fals
 	if(is_array($options)){
 		curl_setopt_array($ch, $options);
 	}
-	$response = curl_exec($ch);curl_progress_end($ch,$response);
+	$response = curl_exec($ch);
 	$header_size = curl_getinfo($ch,CURLINFO_HEADER_SIZE);
 	$response_info = curl_getinfo($ch);
 	$http_body   = substr($response, $header_size);
 	$http_header = substr($response, 0, $header_size);
-	$http_header = parse_headers($http_header);
+	$http_header = parse_headers($http_header);curl_progress_end($ch,$http_body);
 	if(is_array($http_header)){
 		$http_header['kod_add_request_url'] = $url;
 	}
@@ -570,8 +577,26 @@ function url_request_mutil($requests,$timeout=20){
 		$url 	= $request['url'];
 		$data 	= is_array($request['data']) ? http_build_query($request['data']) : $request['data'].'';
 		if(isset($request['method']) && strtoupper($request['method']) === 'POST') {
+			$bodyData = $request['data'];
+			if($bodyData && is_array($bodyData)){
+				foreach($bodyData as $key => $value){
+					if(!is_string($value) || substr($value,0,1) !== "@"){continue;}
+					$path = ltrim($value,'@');
+					$filename = iconv_app(get_path_this($path));
+					if(isset($bodyData['curlUploadName'])){//自定义上传文件名;临时参数
+						$filename = $bodyData['curlUploadName'];
+						unset($bodyData['curlUploadName']);
+					}
+					$mime = get_file_mime(get_path_ext($filename));
+					if(class_exists('\CURLFile')){
+						$bodyData[$key] = new CURLFile(realpath($path),$mime,$filename);
+					}else{
+						$bodyData[$key] = "@".realpath($path).";type=".$mime.";filename=".$filename;
+					}
+				}
+			}
 			curl_setopt($ch, CURLOPT_POST,1);
-			if($data){curl_setopt($ch, CURLOPT_POSTFIELDS,$data);}
+			if($bodyData){curl_setopt($ch, CURLOPT_POSTFIELDS,$bodyData);}
 		}else{
 			curl_setopt($ch,CURLOPT_HTTPGET,1);
 			if($data &&  strstr($url,'?')){$url = $url.'&'.$data;}
@@ -590,6 +615,7 @@ function url_request_mutil($requests,$timeout=20){
 		}
 		
 		curl_setopt($ch, CURLOPT_URL,$url);
+		curl_setopt($ch, CURLOPT_HEADER, 1);
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER,true);
 		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
 		curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
@@ -621,12 +647,15 @@ function url_request_mutil($requests,$timeout=20){
 	$results = array();
 	foreach($handles as $index => $ch){
 		$info = curl_getinfo($ch);
-		$body = curl_multi_getcontent($ch);
+		$response = curl_multi_getcontent($ch);
+		$headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+		$body 		= substr($response, $headerSize);
 		$results[$index] = array(
 			'data' 	=> $body,
-			'info' 	=> $info,
 			'status'=> $info['http_code'] >= 200 && $info['http_code'] <= 299,
 			'code'	=> $info['http_code'],
+			'header'=> parse_headers(substr($response,0,$headerSize)),
+			'info'	=> $info,
 		);
 		curl_progress_end($ch,$body);
 		curl_multi_remove_handle($mh, $ch);
@@ -721,8 +750,13 @@ function request_url_safe($url){
 	if(!$hasAllow) return false;
 	if(!$info['scheme'] || !$info['host'] || !in_array($info['scheme'],$allow)) return false;
 	if(@file_exists($url) ) return false;
-	//if($info['host'] == 'localhost' || $info['host'] == '127.0.0.1' || strstr($info['host'],'192.168.')) return false;
 	
+	// 自定义校验函数; 可在插件中或 config/setting_user.php 中实现;
+	if(function_exists('request_url_safe_self')){
+		return request_url_safe_self($url,$info['host']);
+	}
+	
+	//if($info['host'] == 'localhost' || $info['host'] == '127.0.0.1' || strstr($info['host'],'192.168.')) return false;
 	return true;
 }
 

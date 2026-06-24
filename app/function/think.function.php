@@ -50,6 +50,9 @@ function think_exception($msg) {
 	$trace = get_caller_trace($trace,false);
 	write_log($error."\n".get_caller_msg_parse($trace)."\n".json_encode($GLOBALS['in']),'error');
 	if(isset($GLOBALS['SHOW_OUT_EXCEPTION']) && $GLOBALS['SHOW_OUT_EXCEPTION']){
+		if($GLOBALS['SHOW_OUT_PLUGINS']){ // 插件 echoJs 中代码报错处理;
+			return plugin_echo_error($error,get_caller_msg_parse($trace));
+		}
 		throw new Exception($error);
 	}
     if(defined('GLOBAL_DEBUG') && GLOBAL_DEBUG ){$trace[] = $error;pr($trace);exit;}
@@ -62,6 +65,12 @@ function think_exception($msg) {
 	$error = $error.'<div style="border-top:1px dotted #eee;padding-top:10px;"><code>'.$desc.'</code></div>';
 	$error = $error.'<div style="color:#ccc;font-size:12px;"><code>['.think_system_info().']</code></div>';
 	show_tips($error,'',0,'',false);
+}
+function plugin_echo_error($error,$trace){
+	$errorShow 	= 'decodeURIComponent("'.rawurlencode($error).'")';
+	$errorTrace = 'decodeURIComponent("'.rawurlencode($trace).'")';
+	echo "\n\n;{console.error(".$errorShow.",".$errorTrace.");};\n";
+	echo ";{Tips.notify({title:".$errorShow.",content:".$errorTrace.",icon:'warning',delay:6000});};\n\n";
 }
 
 function think_error_parse(&$error,&$desc){
@@ -373,14 +382,15 @@ function think_trace($value = '[think]', $label = '', $level = 'DEBUG', $record 
 		$_trace[$keyInfo]   = array('timeUse'=>0,'count'=>0);
 	}
 	
-	$useTime = substr($info,strrpos($info,'[ RunTime:')+10,-5);
-	$_trace[$keyInfo]['timeUse'] = round($_trace[$keyInfo]['timeUse'] + $useTime,5);
+	$useTimePose = strrpos($info,'[ RunTime:');
+	$useTime = substr($info,$useTimePose+10,-5);
+	$_trace[$keyInfo]['timeUse'] = round($_trace[$keyInfo]['timeUse'] + floatval($useTime),5);
 	$_trace[$keyInfo]['count']++;
 	
 	$timeNow  = timeFloat();$timeNowArr = explode('.',$timeNow.'000');
 	$timeShow = date('i:s.',$timeNowArr[0]).substr($timeNowArr[1],0,4);
 	$index = 'i-'.$_trace[$keyInfo]['count'];
-	$_trace[$keyList][$index]  = $timeShow.'['.$useTime.'s]: '.substr($info,0,-21);
+	$_trace[$keyList][$index]  = $timeShow.'['.$useTime.'s]: '.substr($info,0,$useTimePose);
 	$_trace[$keyTrace][$index] = array_slice(get_caller_info(),4,-1); // 5ms 每个;
 	$_trace[$keyTrace] = array_slice($_trace[$keyTrace],-$logMax);
 	$_trace[$keyList]  = array_slice($_trace[$keyList],-$logMax);

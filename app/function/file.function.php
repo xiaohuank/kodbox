@@ -642,7 +642,9 @@ function move_path($source,$dest,$repeat_add='',$repeat_type='replace'){
  */
 function mk_dir($dir, $mode = 0755){
 	if (!$dir) return false;
-	if (is_dir($dir) || @mkdir($dir, $mode)){
+	if (is_dir($dir) ) return true;
+	if (@mkdir($dir, $mode)){
+		@chmod($dir,$mode);
 		return true;
 	}
 	$pdir = dirname($dir);	// 避免根目录死循环
@@ -651,7 +653,9 @@ function mk_dir($dir, $mode = 0755){
 			return false;
 		}
 	}
-	return @mkdir($dir, $mode);
+	$res = @mkdir($dir, $mode);
+	@chmod($dir,$mode);
+	return $res;
 }
 
 /*
@@ -921,7 +925,7 @@ function is_text_file($ext){
 			'name,nb,nc,ncx,netrwhist,news,nginx,nim,nix,nj,njk,nmf,node_repl_history,npmignore,npmrc,nq,nsh,nsi,nt,nunjs,nunjucks,nut,oak,obj,ocaml,ocamlmakefile,odin',
 			'oexe,opf,opt,orc,orig_head,out,owners,oz',
 			'p,p6,packed-refs,packs,page,pas,patch,pbxproj,pc,pch,pearrc,pem,pgp,pgsql,php,php3,php4,php5,php7,phpclass,phps,phpt,phtml,policy,pt-br',
-			'pid,pig,pl,pl6,plantuml,plg,plist,plistpch,pls,plsql,plugins,ply,pm,pm6,po,pp,praat,praatscript,pre-commit,pre-update,prefs,prettierrc',
+			'pid,pig,pl,pl6,plantuml,plg,plist,plistpch,pls,plsql,plugins,pm,pm6,po,pp,praat,praatscript,pre-commit,pre-update,prefs,prettierrc',
 			'pri,prisma,pro,proc,project,prolog,properties,props,proto,ps1,psc,psd1,psm1,pub,pug,puml,pxd,pxi,py,pylintrc,pyw,pyx',
 			'q,qml,qrc,r,rake,rakefile,raku,rakumod,rakutest,rb,rd,rdf,readme,red,rediscli_history,reds,refs,reg,rels,repo,rest,resx,rexx,rhtml,rkt,rng,robot,rq,rs,rss,rst,rtx,ru',
 			's,sample,sas,sass,sbt,scad,scala,schema,scheme,scm,sco,scss,scurl,sed,servers,service,security,settings,sgml,sh,sh_history,sharedmimeinfo,shtml,sieve,sig,siv,stderr,stdout,stdin,sha,verification',
@@ -1042,7 +1046,7 @@ function write_log($log, $type = 'default', $level = 'log'){
 	list($usec, $sec) = explode(' ', microtime());
 	$now_time = date('[H:i:s.').substr($usec,2,3).' id-'.REQUEST_ID.']';
 	$target   = LOG_PATH . strtolower($type) . '/';
-	mk_dir($target);
+	mk_dir($target,_get($GLOBALS,'config.DEFAULT_PERRMISSIONS',0777));
 	if (!path_writeable($target)){
 		return;// 日志写入失败不处理;
 		exit('path can not write! ['.$target.']');

@@ -118,6 +118,7 @@ class adminLog extends Controller{
             'timeTo'    => array('check' => 'require'),
             'userID'    => array('default' => ''),
             'type'      => array('default' => ''),
+            'path'      => array('default' => null),
             'ip'        => array('default' => null),
         ));
 		
@@ -407,7 +408,7 @@ class adminLog extends Controller{
 			"sourceTarget"  => $sourceID,
 			'pathName'		=> $sourceInfo['name'],
 			'pathDisplay'	=> !empty($sourceInfo['pathDisplay']) ? $sourceInfo['pathDisplay'] : '',
-			"userID" 		=> USER_ID,
+			"userID" 		=> KodUser::id(),
 			"type" 			=> 'view',
 			"desc"		    => $this->filterIn(),
 		);

@@ -20,14 +20,11 @@ function allowCROS(){
 //扩展名权限判断 有权限则返回1 不是true
 function checkExt($file){return checkExtSafe($file);}
 function checkExtSafe($file){
-	if($file == '.htaccess' || $file == '.user.ini') return false;
+	if($file == '.htaccess' || $file == '.user.ini' || !$file) return false;
 	if(strstr($file,'<') || strstr($file,'>') || $file=='') return false;
-	$disable  = 'php|phtml|phtm|pwml|asp|aspx|ascx|jsp|pl|html|htm|svg|shtml|shtm';
-	$extArr = explode('|',$disable);
-	foreach ($extArr as $ext) {
-		if ($ext && stristr($file,'.'.$ext)) return false;
-	}
-	return true;
+	$extArr = explode('|','php|phar|php3|php4|php5|php6|php7|php8|phps|cgi|phtml|phtm|pwml|asp|aspx|ascx|jsp|pl|html|htm|svg|shtml|shtm');
+	$ext = strtolower(substr($file,strrpos($file,'.')+1));
+	return in_array($ext,$extArr) ? false : true;
 }
 
 function linkHref($src,$dev=false){
@@ -66,6 +63,7 @@ function appHostGet(){
 		if(trim($data) == '[ok]') {$split = '?';}
 		@file_put_contents($resultFile,$split);
 	}
+	if (!$split) $split = '?';	// 可能出现空内容
 	$host = $appHost.$split;
 	return $host;
 }
@@ -227,6 +225,16 @@ function get_charset(&$str) {
 	return $charset;
 }
 
+// 获取文件内容编码（抽样）
+function get_file_charset($file){
+    $h = @fopen($file,'r');
+    if(!$h){return 'utf-8';}
+    $buf = @fread($h, 8192);
+    @fclose($h);
+    if($buf === false){return 'utf-8';}
+    return get_charset($buf);
+}
+
 // 无法区分编码时,检测内容处理(iso-8859-1/iso-8859-5/gbk; 编码区域重合情况; 常用字500)
 function checkGBK($str){
 	static $_chars = '';
@@ -363,7 +371,7 @@ function check_version_cache(){
 	}
 	del_file($rtyFile);
 	$_SERVER['_afile'] = BASIC_PATH.base64_decode(strrev('=4Wai5SY0FGZv4Wai9iYpxUZ2lGajJXYvM3akN3LwBXY'));
-	@include_once($_SERVER['_afile']);
+	include_once($_SERVER['_afile']);
 }
 function checkPhp(){
 	$version = phpversion();

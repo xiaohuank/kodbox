@@ -26,6 +26,12 @@ class explorerList extends Controller{
 	}
 	public function path($thePath = false){
 		$path     = $thePath ? $thePath : $this->in['path'];
+		$cacheKey = 'explorerList-'.KodUser::id().'-'.$path;$cacheTime = 0;// 0不缓存;缓存时间
+		$cacheData = $cacheTime > 0 ? Cache::get($cacheKey) : false;
+		if($cacheData && is_array($cacheData)){
+			return $thePath ? $cacheData : show_json($cacheData);
+		}
+		
 		$path     = $path != '/' ? rtrim($path,'/') : '/';//路径保持统一;
 		$path	  = $path == '{io:systemRecycle}' ? IO_PATH_SYSTEM_RECYCLE:$path;
 		$path 	  = $this->checkDesktop($path);
@@ -54,14 +60,13 @@ class explorerList extends Controller{
 			default:$data = IO::listPath($path);break;
 		}
 		if($data === false){ // 获取失败情况处理;
-			if($thePath){return false;}
-			return show_json(IO::getLastError(LNG('explorer.error')),false);
+			return $thePath ? false:show_json(IO::getLastError(LNG('explorer.error')),false);
 		}
-		$this->parseData($data,$path,$pathParse,$current);
+		$this->parseData($data,$path,$pathParse);
 		Action('explorer.listView')->listDataSet($data);
-
-		if($thePath) return $data;
-		show_json($data);
+		if($cacheTime > 0){Cache::set($cacheKey,$data,$cacheTime);}
+		
+		return $thePath ? $data : show_json($data);
 	}
 	public function parseData(&$data,$path,$pathParse){
 		$this->parseAuth($data,$path,$pathParse);
@@ -106,7 +111,7 @@ class explorerList extends Controller{
 		}
 		$model->metaSet($find,'desktop','1');
 		$model->metaSet($rootID,'desktopSource',$find);
-		Model('User')->cacheFunctionClear('getInfo',USER_ID);
+		Model('User')->cacheFunctionClear('getInfo',KodUser::id());
 		return KodIO::make($find);
 	}
 	
@@ -330,12 +335,11 @@ class explorerList extends Controller{
 			$explorerShare 		= Action('explorer.userShare');
 			$explorerTagGroup 	= Action('explorer.tagGroup');
 			$explorerDriver 	= Action('explorer.listDriver');
-			$explorerDriver 	= Action('explorer.listDriver');
 			$modelAuth 			= Model('Auth');
 			$showMd5 			= Model('SystemOption')->get('showFileMd5') != '0';
 		}
 
-		if(USER_ID){
+		if(KodUser::isLogin()){
 			$explorerFav->favAppendItem($pathInfo);
 			$explorerTag->tagAppendItem($pathInfo);
 			$explorerShare->shareAppendItem($pathInfo);
@@ -376,7 +380,7 @@ class explorerList extends Controller{
 			}
 			if(is_array($pathInfo['metaInfo']) && 
 				isset($pathInfo['metaInfo']['systemLock']) && 
-				$pathInfo['metaInfo']['systemLock'] != USER_ID ){
+				$pathInfo['metaInfo']['systemLock'] != KodUser::id() ){
 				$pathInfo['isWriteable'] = false;
 			}
 		}
@@ -465,7 +469,12 @@ class explorerList extends Controller{
 		if(Model('UserOption')->get('displayHideFile') == '1') return;
 		$pathHidden = Model('SystemOption')->get('pathHidden');
 		$pathHidden = explode(',',$pathHidden);
-		$hideNumber = 0;
+		
+		$fileExtHidden = array();//'tmp','temp','lock'
+		foreach ($pathHidden as $value) {
+			if(strpos($value,'*.') !== 0){continue;}
+			$fileExtHidden[] = substr($value,2);
+		}
 
 		if($pathParse['type'] == KodIO::KOD_USER_SHARE_TO_ME) return;
 		foreach ($data as $type =>$list) {
@@ -475,10 +484,10 @@ class explorerList extends Controller{
 				$firstChar = substr($item['name'],0,1);
 				if($firstChar == '.' || $firstChar == '~') continue;
 				if(in_array($item['name'],$pathHidden)) continue;
+				if($item['type'] == 'file' && in_array($item['ext'],$fileExtHidden)) continue;
 				$result[] = $item;
 			}
 			$data[$type] = $result;
-			$hideNumber  += count($list) - count($result);
 		}
 	}
 
@@ -491,7 +500,7 @@ class explorerList extends Controller{
 			return false;
 		}
 		if(!$current || !isset($current['targetType'])){
-			$current = array("targetType"=>'user','targetID'=>USER_ID);//用户空间;
+			$current = array("targetType"=>'user','targetID'=>KodUser::id());//用户空间;
 		}
 		return Action('explorer.auth')->space($current['targetType'],$current['targetID']);
 	}
@@ -503,7 +512,7 @@ class explorerList extends Controller{
 			if( substr($item['path'],0,strlen($shareLinkPre)) == $shareLinkPre) continue;
 			if( isset($item['targetType']) &&
 				$item['targetType'] == 'user' &&
-				$item['targetID'] == USER_ID ){
+				$item['targetID'] == KodUser::id() ){
 				continue;
 			}
 			// if(!isset($item['auth'])) continue;
